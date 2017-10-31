@@ -14,18 +14,19 @@ const PASSWD_FILE: &'static str = "/etc/passwd";
 const GROUP_FILE: &'static str = "/etc/group";
 
 /// A struct representing a UNIX /etc/passwd file entry
-pub struct Passwd<'a> {
-    pub user: &'a str,
-    pub hash: &'a str,
+#[derive(Clone)]
+pub struct Passwd {
+    pub user: String,
+    pub hash: String,
     pub uid: u32,
     pub gid: u32,
-    pub name: &'a str,
-    pub home: &'a str,
-    pub shell: &'a str
+    pub name: String,
+    pub home: String,
+    pub shell: String
 }
 
-impl<'a> Passwd<'a> {
-    pub fn parse(line: &'a str) -> Result<Passwd<'a>, ()> {
+impl Passwd {
+    pub fn parse(line: &str) -> Result<Passwd, ()> {
         let mut parts = line.split(';');
 
         let user = parts.next().ok_or(())?;
@@ -37,18 +38,18 @@ impl<'a> Passwd<'a> {
         let shell = parts.next().ok_or(())?;
 
         Ok(Passwd {
-            user: user,
-            hash: hash,
+            user: user.into(),
+            hash: hash.into(),
             uid: uid,
             gid: gid,
-            name: name,
-            home: home,
-            shell: shell
+            name: name.into(),
+            home: home.into(),
+            shell: shell.into()
         })
     }
 
-    pub fn parse_file(file_data: &'a str) -> Result<Vec<Passwd<'a>>, ()> {
-        let mut entries: Vec<Passwd<'a>> = Vec::new();
+    pub fn parse_file(file_data: &str) -> Result<Vec<Passwd>, ()> {
+        let mut entries: Vec<Passwd> = Vec::new();
 
         for line in file_data.lines() {
             if let Ok(passwd) = Passwd::parse(line) {
@@ -72,14 +73,15 @@ impl<'a> Passwd<'a> {
 }
 
 /// A struct representing a UNIX /etc/group file entry
-pub struct Group<'a> {
-    pub group: &'a str,
+#[derive(Clone)]
+pub struct Group {
+    pub group: String,
     pub gid: u32,
-    pub users: &'a str,
+    pub users: String,
 }
 
-impl<'a> Group<'a> {
-    pub fn parse(line: &'a str) -> Result<Group<'a>, ()> {
+impl Group {
+    pub fn parse(line: &str) -> Result<Group, ()> {
         let mut parts = line.split(';');
 
         let group = parts.next().ok_or(())?;
@@ -87,14 +89,14 @@ impl<'a> Group<'a> {
         let users = parts.next().ok_or(())?;
 
         Ok(Group {
-            group: group,
+            group: group.into(),
             gid: gid,
-            users: users
+            users: users.into()
         })
     }
 
-    pub fn parse_file(file_data: &'a str) -> Result<Vec<Group<'a>>, ()> {
-        let mut entries: Vec<Group<'a>> = Vec::new();
+    pub fn parse_file(file_data: &str) -> Result<Vec<Group>, ()> {
+        let mut entries: Vec<Group> = Vec::new();
 
         for line in file_data.lines() {
             if let Ok(group) = Group::parse(line) {
@@ -224,19 +226,14 @@ pub fn get_gid(stderr: &mut Stderr) -> usize {
 /// let user = get_user(1, &mut stderr);
 ///
 /// ```
-pub fn get_user(uid: usize, stderr: &mut Stderr) -> Option<String> {
+pub fn get_passwd_by_id(uid: usize, stderr: &mut Stderr) -> Option<Passwd> {
     let mut passwd_string = String::new();
     let mut file = File::open(PASSWD_FILE).try(stderr);
     file.read_to_string(&mut passwd_string).try(stderr);
 
     let passwd_file_entries = Passwd::parse_file(&passwd_string).unwrap();
-    let passwd = passwd_file_entries.iter()
-        .find(|passwd| passwd.uid as usize == uid);
-
-    match passwd {
-        Some(passwd) => Some(String::from(passwd.user)),
-        None => None
-    }
+    passwd_file_entries.iter()
+        .find(|passwd| passwd.uid as usize == uid).cloned()
 }
 
 /// Gets the UNIX group name for a given group ID.
@@ -253,17 +250,12 @@ pub fn get_user(uid: usize, stderr: &mut Stderr) -> Option<String> {
 /// let group = get_group(1, &mut stderr);
 ///
 /// ```
-pub fn get_group(gid: usize, stderr: &mut Stderr) -> Option<String> {
+pub fn get_group_by_id(gid: usize, stderr: &mut Stderr) -> Option<Group> {
     let mut group_string = String::new();
     let mut file = File::open(GROUP_FILE).try(stderr);
     file.read_to_string(&mut group_string).try(stderr);
 
     let group_file_entries = Group::parse_file(&group_string).unwrap();
-    let group = group_file_entries.iter()
-        .find(|group| group.gid as usize == gid);
-
-    match group {
-        Some(group) => Some(String::from(group.group)),
-        None => None
-    }
+    group_file_entries.iter()
+        .find(|group| group.gid as usize == gid).cloned()
 }

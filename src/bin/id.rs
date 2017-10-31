@@ -11,7 +11,7 @@ use std::process::exit;
 use extra::io::fail;
 use extra::option::OptionalExt;
 use arg_parser::{ArgParser, Param};
-use userutils::{get_egid, get_gid, get_euid, get_uid, get_user, get_group};
+use userutils::{get_egid, get_gid, get_euid, get_uid, get_passwd_by_id, get_group_by_id};
 
 const HELP_INFO: &'static str = "Try ‘id --help’ for more information.\n";
 const MAN_PAGE: &'static str = /* @MANSTART{id} */ r#"
@@ -120,8 +120,8 @@ pub fn main() {
             get_euid(&mut stderr)
         };
 
-        get_user(uid, &mut stderr).map(|user| {
-            print_msg(&format!("{}\n", user), &mut stdout, &mut stderr);
+        get_passwd_by_id(uid, &mut stderr).map(|passwd| {
+            print_msg(&format!("{}\n", passwd.user), &mut stdout, &mut stderr);
             exit(0);
         }).or_else(|| {
             fail(&format!("id: no user found for uid: {}", uid), &mut stderr)
@@ -151,8 +151,8 @@ pub fn main() {
             get_egid(&mut stderr)
         };
 
-        get_group(gid, &mut stderr).map(|group| {
-            print_msg(&format!("{}\n", group), &mut stdout, &mut stderr);
+        get_group_by_id(gid, &mut stderr).map(|group| {
+            print_msg(&format!("{}\n", group.group), &mut stdout, &mut stderr);
             exit(0);
         }).or_else(|| {
             fail(&format!("id: no group found for gid: {}", gid), &mut stderr)
@@ -188,15 +188,15 @@ pub fn main() {
     // We get everything we can and show that
     let euid = get_euid(&mut stderr);
     let egid = get_egid(&mut stderr);
-    let user = get_user(euid, &mut stderr).unwrap_or_else(|| {
+    let passwd = get_passwd_by_id(euid, &mut stderr).unwrap_or_else(|| {
         fail(&format!("id: no user found for uid: {}", euid), &mut stderr);
     });
 
-    let group = get_group(egid, &mut stderr).unwrap_or_else(|| {
+    let group = get_group_by_id(egid, &mut stderr).unwrap_or_else(|| {
         fail(&format!("id: no group found for gid: {}", euid), &mut stderr);
     });
 
-    let msg = format!("uid={}({}) gid={}({})\n", euid, user, egid, group);
+    let msg = format!("uid={}({}) gid={}({})\n", euid, passwd.user, egid, group.group);
     print_msg(&msg, &mut stdout, &mut stderr);
     exit(0);
 }

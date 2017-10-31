@@ -83,7 +83,7 @@ fn main() {
     } else {
         let user = &parser.args[0];
         let passwd_option = passwd_file_entries.iter()
-            .find(|passwd| passwd.user == user);
+            .find(|passwd| passwd.user == *user);
 
         if let Some(passwd) = passwd_option {
             passwd

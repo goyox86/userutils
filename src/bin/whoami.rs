@@ -9,7 +9,7 @@ use std::process::exit;
 use std::env;
 use arg_parser::ArgParser;
 use extra::option::OptionalExt;
-use userutils::{get_euid, get_user};
+use userutils::{get_euid, get_passwd_by_id};
 
 const MAN_PAGE: &'static str = /* @MANSTART{whoami} */ r#"
 NAME
@@ -49,8 +49,8 @@ fn main() {
     }
 
     let euid = get_euid(&mut stderr);
-    let user = match get_user(euid, &mut stderr) {
-        Some(user) => user,
+    let passwd = match get_passwd_by_id(euid, &mut stderr) {
+        Some(passwd) => passwd,
         None => {
             let msg = format!("whoami: no user found for uid: {}", euid);
             stdout.write_all(msg.as_bytes()).try(&mut stderr);
@@ -59,7 +59,7 @@ fn main() {
         }
     };
 
-    stdout.write_all(format!("{}\n", user).as_bytes()).try(&mut stderr);
+    stdout.write_all(format!("{}\n", passwd.user).as_bytes()).try(&mut stderr);
     stdout.flush().try(&mut stderr);
     exit(0);
 }

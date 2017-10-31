@@ -75,14 +75,14 @@ pub fn main() {
     };
 
     passwd_file.read_to_string(&mut passwd_string).try(&mut stderr);
-
     let passwd_file_entries = match Passwd::parse_file(&passwd_string) {
         Ok(entries) => entries,
         Err(_) => fail(&format!("su: there was an error parsing the passwd file."), &mut stderr)
     };
 
     let mut passwd_option = passwd_file_entries.iter()
-        .find(|passwd| { user == passwd.user && ("" == passwd.hash || uid == 0) });
+        .find(|passwd| { user == passwd.user && ("" == passwd.hash || uid == 0) })
+        .cloned();
 
     if passwd_option.is_none() {
         stdout.write_all(b"password: ").try(&mut stderr);
@@ -93,21 +93,22 @@ pub fn main() {
             stdout.flush().try(&mut stderr);
 
             passwd_option = passwd_file_entries.iter()
-                .find(|passwd| user == passwd.user && passwd.verify(&password));
+                .find(|passwd| user == passwd.user && passwd.verify(&password))
+                .cloned();
         }
     }
 
     if let Some(passwd) = passwd_option {
-        let mut command = Command::new(passwd.shell);
+        let mut command = Command::new(&passwd.shell);
 
         command.uid(passwd.uid);
         command.gid(passwd.gid);
 
         command.env("USER", &user);
-        command.env("UID", format!("{}", passwd.uid));
-        command.env("GROUPS", format!("{}", passwd.gid));
-        command.env("HOME", passwd.home);
-        command.env("SHELL", passwd.shell);
+        command.env("UID", format!("{}", &passwd.uid));
+        command.env("GROUPS", format!("{}", &passwd.gid));
+        command.env("HOME", &passwd.home);
+        command.env("SHELL", &passwd.shell);
 
         match command.spawn() {
             Ok(mut child) => match child.wait() {

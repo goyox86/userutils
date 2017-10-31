@@ -87,7 +87,8 @@ pub fn main() {
             };
 
             let mut passwd_option = passwd_file_entries.iter()
-                .find(|passwd| user == passwd.user && "" == passwd.hash);
+                .find(|passwd| user == passwd.user && "" == passwd.hash)
+                .cloned();
 
             if passwd_option.is_none() {
                 stdout.write_all(b"\x1B[1mpassword:\x1B[0m ").try(&mut stderr);
@@ -98,7 +99,8 @@ pub fn main() {
                     stdout.flush().try(&mut stderr);;
 
                     passwd_option = passwd_file_entries.iter()
-                        .find(|passwd| user == passwd.user && passwd.verify(&password));
+                        .find(|passwd| user == passwd.user && passwd.verify(&password))
+                        .cloned();
                 }
             }
 
@@ -108,18 +110,18 @@ pub fn main() {
                     stdout.flush().try(&mut stderr);
                 }
 
-                let mut command = Command::new(passwd.shell);
+                let mut command = Command::new(&passwd.shell);
 
                 command.uid(passwd.uid);
                 command.gid(passwd.gid);
 
-                command.current_dir(passwd.home);
+                command.current_dir(&passwd.home);
 
                 command.env("USER", &user);
                 command.env("UID", format!("{}", passwd.uid));
                 command.env("GROUPS", format!("{}", passwd.gid));
-                command.env("HOME", passwd.home);
-                command.env("SHELL", passwd.shell);
+                command.env("HOME", &passwd.home);
+                command.env("SHELL", &passwd.shell);
 
                 match command.spawn() {
                     Ok(mut child) => match child.wait() {
