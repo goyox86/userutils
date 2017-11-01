@@ -1,68 +1,59 @@
-// #![deny(warnings)]
-// extern crate arg_parser;
-// extern crate extra;
-// extern crate userutils;
+#![deny(warnings)]
 
-// use std::io::{self, Write};
-// use std::process::exit;
-// use std::env;
-// use arg_parser::ArgParser;
-// use extra::option::OptionalExt;
-// use userutils::{get_euid, get_passwd_by_id};
+extern crate arg_parser;
+extern crate extra;
+extern crate redox_users;
 
-// const MAN_PAGE: &'static str = /* @MANSTART{whoami} */ r#"
-// NAME
-//      whoami - display effective user id
+use std::io::{self, Write};
+use std::process::exit;
+use std::env;
+use arg_parser::ArgParser;
+use extra::option::OptionalExt;
+use redox_users::{get_euid, get_user_by_uid};
 
-// SYNOPSIS
-//      whoami [ -h | --help ]
+const MAN_PAGE: &'static str = /* @MANSTART{whoami} */ r#"
+NAME
+    whoami - display effective user id
 
-// DESCRIPTION
-//      The whoami utility displays your effective user ID as a name.
+SYNOPSIS
+    whoami [ -h | --help ]
 
-// OPTIONS
-//     -h
-//     --help
-//         Display this help and exit.
+DESCRIPTION
+    The whoami utility displays your effective user ID as a name.
 
-// EXIT STATUS
-//      The whoami utility exits 0 on success, and >0 if an error occurs.
+OPTIONS
+    -h
+    --help
+        Display this help and exit.
 
-// AUTHOR
-//     Written by Jose Narvaez.
-// "#; /* @MANEND */
+EXIT STATUS
+    The whoami utility exits 0 on success, and >0 if an error occurs.
 
-// fn main() {
-//    let stdout = io::stdout();
-//    let mut stdout = stdout.lock();
-//    let mut stderr = io::stderr();
-
-//    let mut parser = ArgParser::new(1)
-//         .add_flag(&["h", "help"]);
-//    parser.parse(env::args());
-
-//     if parser.found("help") {
-//         stdout.write_all(MAN_PAGE.as_bytes()).try(&mut stderr);
-//         stdout.flush().try(&mut stderr);
-//         exit(0);
-//     }
-
-//     let euid = get_euid(&mut stderr);
-//     let passwd = match get_passwd_by_id(euid, &mut stderr) {
-//         Some(passwd) => passwd,
-//         None => {
-//             let msg = format!("whoami: no user found for uid: {}", euid);
-//             stdout.write_all(msg.as_bytes()).try(&mut stderr);
-//             stdout.flush().try(&mut stderr);
-//             exit(1);
-//         }
-//     };
-
-//     stdout.write_all(format!("{}\n", passwd.user).as_bytes()).try(&mut stderr);
-//     stdout.flush().try(&mut stderr);
-//     exit(0);
-// }
+AUTHOR
+    Written by Jose Narvaez.
+"#; /* @MANEND */
 
 fn main() {
-    
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    let mut stderr = io::stderr();
+
+    let mut parser = ArgParser::new(1)
+        .add_flag(&["h", "help"]);
+        parser.parse(env::args());
+
+    if parser.found("help") {
+        stdout.write_all(MAN_PAGE.as_bytes()).try(&mut stderr);
+        stdout.flush().try(&mut stderr);
+        exit(0);
+    }
+
+    let euid = get_euid();
+    let user = get_user_by_uid(euid).unwrap_or_else(|| {
+        println!("whoami: no user found for uid: {}", euid);
+        exit(1);
+    });
+
+    println!("{}", user.user);
+    exit(0);
 }

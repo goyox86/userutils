@@ -1,176 +1,144 @@
-// extern crate arg_parser;
-// extern crate syscall;
-// extern crate termion;
-// extern crate userutils;
+#![deny(warnings)]
 
-// use std::env;
-// use std::fs::File;
-// use std::io::{self, Read, Write};
-// use std::os::unix::process::CommandExt;
-// use std::process::{self, Command};
+extern crate arg_parser;
+extern crate syscall;
+extern crate termion;
+extern crate redox_users;
 
-// use arg_parser::ArgParser;
-// use termion::input::TermRead;
-// use userutils::{Passwd, Group};
+use std::env;
+use std::io::{self, Write};
+use std::os::unix::process::CommandExt;
+use std::process::{self, Command};
 
-// const MAN_PAGE: &'static str = /* @MANSTART{sudo} */ r#"
-// NAME
-//     sudo - execute a command as another user
+use arg_parser::ArgParser;
+use termion::input::TermRead;
+use redox_users::{get_uid, get_user_by_uid, get_group_by_name};
 
-// SYNOPSIS
-//     sudo command
-//     sudo [ -h | --help ]
+const MAX_ATTEMPTS: u16 = 3;
+const MAN_PAGE: &'static str = /* @MANSTART{sudo} */ r#"
+NAME
+    sudo - execute a command as another user
 
-// DESCRIPTION
-//     The sudo utility allows a permitted user to execute a command as the
-//     superuser or another user, as specified by the security policy.
+SYNOPSIS
+    sudo command
+    sudo [ -h | --help ]
 
-// OPTIONS
+DESCRIPTION
+    The sudo utility allows a permitted user to execute a command as the
+    superuser or another user, as specified by the security policy.
 
-//     -h
-//     --help
-//         Display this help and exit.
+OPTIONS
 
-// EXIT STATUS
-//     Upon successful execution of a command, the exit status from sudo will
-//     be the exit status of the program that was executed. In case of error
-//     the exit status will be >0.
+    -h
+    --help
+        Display this help and exit.
 
-// AUTHOR
-//     Written by Jeremy Soller.
-// "#; /* @MANEND */
+EXIT STATUS
+    Upon successful execution of a command, the exit status from sudo will
+    be the exit status of the program that was executed. In case of error
+    the exit status will be >0.
 
-// pub fn main() {
-//     let stdin = io::stdin();
-//     let mut stdin = stdin.lock();
-//     let stdout = io::stdout();
-//     let mut stdout = stdout.lock();
-//     let stderr = io::stderr();
-//     let mut stderr = stderr.lock();
+AUTHOR
+    Written by Jeremy Soller.
+"#; /* @MANEND */
 
-//     let mut parser = ArgParser::new(1)
-//         .add_flag(&["h", "help"]);
-//     parser.parse(env::args());
+pub fn main() {
+    let stdin = io::stdin();
+    let mut stdin = stdin.lock();
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
 
-//     // Shows the help
-//     if parser.found("help") {
-//         let _ = stdout.write_all(MAN_PAGE.as_bytes());
-//         let _ = stdout.flush();
-//         process::exit(0);
-//     }
+    let mut parser = ArgParser::new(1)
+        .add_flag(&["h", "help"]);
+        parser.parse(env::args());
 
-//     let mut args = env::args().skip(1);
-//     match args.next() {
-//         None => {
-//             writeln!(stderr, "sudo: no command provided").unwrap();
-//             process::exit(1);
-//         },
-//         Some(cmd) => {
-//             let uid = syscall::getuid().unwrap() as u32;
+    // Shows the help
+    if parser.found("help") {
+        let _ = stdout.write_all(MAN_PAGE.as_bytes());
+        let _ = stdout.flush();
+        process::exit(0);
+    }
 
-//             if uid != 0 {
-//                 let mut passwd_string = String::new();
-//                 if let Ok(mut file) = File::open("/etc/passwd") {
-//                     let _ = file.read_to_string(&mut passwd_string);
-//                 }
+    let mut args = env::args().skip(1);
+    let cmd = args.next().unwrap_or_else(|| {
+        eprintln!("sudo: no command provided");
+        process::exit(1);
+    });
 
-//                 let mut passwd_option = None;
-//                 for line in passwd_string.lines() {
-//                     if let Ok(passwd) = Passwd::parse(line) {
-//                         if uid == passwd.uid {
-//                             passwd_option = Some(passwd);
-//                             break;
-//                         }
-//                     }
-//                 }
+    let uid = get_uid();
+    let user = get_user_by_uid(uid).unwrap_or_else(|| {
+        eprintln!("sudo: user not found");
+        process::exit(1);
+    });
 
-//                 match passwd_option {
-//                     None => {
-//                         writeln!(stderr, "sudo: user not found in passwd").unwrap();
-//                         process::exit(1);
-//                     },
-//                     Some(passwd) => {
-//                         let mut group_string = String::new();
-//                         if let Ok(mut file) = File::open("/etc/group") {
-//                             let _ = file.read_to_string(&mut group_string);
-//                         }
+    if uid != 0 {
+        let sudo_group = get_group_by_name("sudo").unwrap_or_else(|| {
+            eprintln!("sudo: sudo group not found");
+            process::exit(1);
+        });
 
-//                         let mut group_option = None;
-//                         for line in group_string.lines() {
-//                             if let Ok(group) = Group::parse(line) {
-//                                 if group.group == "sudo" && group.users.split(',').any(|name| name == passwd.user) {
-//                                     group_option = Some(group);
-//                                     break;
-//                                 }
-//                             }
-//                         }
+        if sudo_group.users.split(',').any(|name| name == user.user) {
+            if ! user.hash.is_empty() {
+                let max_attempts = MAX_ATTEMPTS;
+                let mut attempts = 0;
 
-//                         if group_option.is_none() {
-//                             writeln!(stderr, "sudo: '{}' not in sudo group", passwd.user).unwrap();
-//                             process::exit(1);
-//                         }
+                loop {
+                    print!("[sudo] password for {}: ", user.user);
+                    let _ = stdout.flush();
 
-//                         if ! passwd.hash.is_empty() {
-//                             let max_attempts = 3;
-//                             let mut attempts = 0;
-//                             loop {
-//                                 write!(stdout, "[sudo] password for {}: ", passwd.user).unwrap();
-//                                 let _ = stdout.flush();
+                    match stdin.read_passwd(&mut stdout).unwrap() {
+                        Some(password) => {
+                            write!(stdout, "\n").unwrap();
+                            let _ = stdout.flush();
 
-//                                 match stdin.read_passwd(&mut stdout).unwrap() {
-//                                     Some(password) => {
-//                                         write!(stdout, "\n").unwrap();
-//                                         let _ = stdout.flush();
+                            if user.verify(&password) {
+                                break;
+                            } else {
+                                attempts += 1;
+                                eprintln!("sudo: incorrect password ({}/{})", attempts, max_attempts);
+                                if attempts >= max_attempts {
+                                    process::exit(1);
+                                }
+                            }
+                        },
+                        None => {
+                            write!(stdout, "\n").unwrap();
+                            process::exit(1);
+                        }
+                    }
+                }
+            } else {
+                eprintln!("sudo: '{}' is in sudo group but does not have a password set", user.user);
+                process::exit(1);
+            }
+        } else {
+            eprintln!("sudo: '{}' not in sudo group", user.user);
+            process::exit(1);
+        }
+    }
 
-//                                         if passwd.verify(&password) {
-//                                             break;
-//                                         } else {
-//                                             attempts += 1;
-//                                             writeln!(stderr, "sudo: incorrect password ({}/{})", attempts, max_attempts).unwrap();
-//                                             if attempts >= max_attempts {
-//                                                 process::exit(1);
-//                                             }
-//                                         }
-//                                     },
-//                                     None => {
-//                                         write!(stdout, "\n").unwrap();
-//                                         process::exit(1);
-//                                     }
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
+    let mut command = Command::new(&cmd);
+    for arg in args {
+        command.arg(&arg);
+    }
 
-//             let mut command = Command::new(&cmd);
-//             for arg in args {
-//                 command.arg(&arg);
-//             }
+    command.uid(0);
+    command.gid(0);
+    command.env("USER", "root");
+    command.env("UID", "0");
+    command.env("GROUPS", "0");
 
-//             command.uid(0);
-//             command.gid(0);
-//             command.env("USER", "root");
-//             command.env("UID", "0");
-//             command.env("GROUPS", "0");
-
-//             match command.spawn() {
-//                 Ok(mut child) => match child.wait() {
-//                     Ok(status) => process::exit(status.code().unwrap_or(0)),
-//                     Err(err) => {
-//                         writeln!(stderr, "sudo: failed to wait for {}: {}", cmd, err).unwrap();
-//                         process::exit(1);
-//                     }
-//                 },
-//                 Err(err) => {
-//                     writeln!(stderr, "sudo: failed to execute {}: {}", cmd, err).unwrap();
-//                     process::exit(1);
-//                 }
-//             }
-//         }
-//     }
-// }
-
-fn main() {
-    
+    match command.spawn() {
+        Ok(mut child) => match child.wait() {
+            Ok(status) => process::exit(status.code().unwrap_or(0)),
+            Err(err) => {
+                eprintln!("sudo: failed to wait for {}: {}", cmd, err);
+                process::exit(1);
+            }
+        },
+        Err(err) => {
+            eprintln!("sudo: failed to execute {}: {}", cmd, err);
+            process::exit(1);
+        }
+    }
 }
