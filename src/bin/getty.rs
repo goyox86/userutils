@@ -1,7 +1,9 @@
 #![deny(warnings)]
 
 extern crate redox_termios;
+extern crate redox_users;
 extern crate syscall;
+
 extern crate arg_parser;
 extern crate extra;
 
