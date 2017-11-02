@@ -8,7 +8,7 @@ extern crate redox_users;
 use std::env;
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
-use std::process::{self, Command};
+use std::process::{Command, exit};
 
 use arg_parser::ArgParser;
 use termion::input::TermRead;
@@ -56,25 +56,25 @@ pub fn main() {
     if parser.found("help") {
         let _ = stdout.write_all(MAN_PAGE.as_bytes());
         let _ = stdout.flush();
-        process::exit(0);
+        exit(0);
     }
 
     let mut args = env::args().skip(1);
     let cmd = args.next().unwrap_or_else(|| {
         eprintln!("sudo: no command provided");
-        process::exit(1);
+        exit(1);
     });
 
     let uid = get_uid();
     let user = get_user_by_uid(uid).unwrap_or_else(|| {
         eprintln!("sudo: user not found");
-        process::exit(1);
+        exit(1);
     });
 
     if uid != 0 {
         let sudo_group = get_group_by_name("sudo").unwrap_or_else(|| {
             eprintln!("sudo: sudo group not found");
-            process::exit(1);
+            exit(1);
         });
 
         if sudo_group.users.split(',').any(|name| name == user.user) {
@@ -97,23 +97,23 @@ pub fn main() {
                                 attempts += 1;
                                 eprintln!("sudo: incorrect password ({}/{})", attempts, max_attempts);
                                 if attempts >= max_attempts {
-                                    process::exit(1);
+                                    exit(1);
                                 }
                             }
                         },
                         None => {
                             write!(stdout, "\n").unwrap();
-                            process::exit(1);
+                            exit(1);
                         }
                     }
                 }
             } else {
                 eprintln!("sudo: '{}' is in sudo group but does not have a password set", user.user);
-                process::exit(1);
+                exit(1);
             }
         } else {
             eprintln!("sudo: '{}' not in sudo group", user.user);
-            process::exit(1);
+            exit(1);
         }
     }
 
@@ -130,15 +130,15 @@ pub fn main() {
 
     match command.spawn() {
         Ok(mut child) => match child.wait() {
-            Ok(status) => process::exit(status.code().unwrap_or(0)),
+            Ok(status) => exit(status.code().unwrap_or(0)),
             Err(err) => {
                 eprintln!("sudo: failed to wait for {}: {}", cmd, err);
-                process::exit(1);
+                exit(1);
             }
         },
         Err(err) => {
             eprintln!("sudo: failed to execute {}: {}", cmd, err);
-            process::exit(1);
+            exit(1);
         }
     }
 }
